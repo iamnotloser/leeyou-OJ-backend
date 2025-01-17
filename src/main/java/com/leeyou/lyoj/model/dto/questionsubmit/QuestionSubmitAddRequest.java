@@ -1,10 +1,10 @@
-package com.leeyou.lyoj.model.dto.question;
+package com.leeyou.lyoj.model.dto.questionsubmit;
 
 import lombok.Data;
 
 import java.io.Serializable;
 @Data
-public class QuestionSubmitRequest implements Serializable {
+public class QuestionSubmitAddRequest implements Serializable {
 
     /**
      * 编程语言

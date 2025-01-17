@@ -1,20 +1,37 @@
 package com.leeyou.lyoj.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.leeyou.lyoj.common.ErrorCode;
+import com.leeyou.lyoj.constant.CommonConstant;
 import com.leeyou.lyoj.exception.BusinessException;
 import com.leeyou.lyoj.mapper.QuestionSubmitMapper;
-import com.leeyou.lyoj.model.dto.question.QuestionSubmitRequest;
+import com.leeyou.lyoj.model.dto.questionsubmit.QuestionSubmitAddRequest;
+import com.leeyou.lyoj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.leeyou.lyoj.model.entity.Question;
 import com.leeyou.lyoj.model.entity.QuestionSubmit;
 import com.leeyou.lyoj.model.entity.User;
 import com.leeyou.lyoj.model.enums.QuestionSubmitEnum;
 import com.leeyou.lyoj.model.enums.QuestionSubmitLanguageEnum;
+import com.leeyou.lyoj.model.vo.QuestionSubmitVO;
+import com.leeyou.lyoj.model.vo.QuestionSubmitVO;
+import com.leeyou.lyoj.model.vo.UserVO;
 import com.leeyou.lyoj.service.QuestionService;
 import com.leeyou.lyoj.service.QuestionSubmitService;
+import com.leeyou.lyoj.service.UserService;
+import com.leeyou.lyoj.utils.SqlUtils;
+import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
 * @author leeyou
@@ -31,25 +48,28 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
     @Resource
     private QuestionService questionService;
 
+
+    @Resource
+    private UserService userService;
     /**
      * 题目提交
      *
-     * @param questionSubmitRequest
+     * @param questionSubmitAddRequest
      * @param loginUser
      * @return
      */
     @Override
-    public long doQuestionSubmit(QuestionSubmitRequest questionSubmitRequest, User loginUser) {
+    public long doQuestionSubmit(QuestionSubmitAddRequest questionSubmitAddRequest, User loginUser) {
         // 判断实体是否存在，根据类别获取实体
 
         //todo 校验编程语言是否合理
-        String language = questionSubmitRequest.getLanguage();
+        String language = questionSubmitAddRequest.getLanguage();
         QuestionSubmitLanguageEnum languageEnum = QuestionSubmitLanguageEnum.getEnumByValue(language);
         if (languageEnum == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "编程语言不存在");
         }
-        String code = questionSubmitRequest.getCode();
-        Long questionId = questionSubmitRequest.getQuestionId();
+        String code = questionSubmitAddRequest.getCode();
+        Long questionId = questionSubmitAddRequest.getQuestionId();
 
         Question question = questionService.getById(questionId);
         if (question == null) {
@@ -80,6 +100,63 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
 //        }
 
 
+
+    }
+
+    @Override
+    public QueryWrapper<QuestionSubmit> getQueryWrapper(QuestionSubmitQueryRequest questionSubmitQueryRequest) {
+        QueryWrapper<QuestionSubmit> queryWrapper = new QueryWrapper<>();
+        if (questionSubmitQueryRequest == null) {
+            return queryWrapper;
+        }
+        String sortField = questionSubmitQueryRequest.getSortField();
+        String sortOrder = questionSubmitQueryRequest.getSortOrder();
+        Long userId = questionSubmitQueryRequest.getUserId();
+        String language = questionSubmitQueryRequest.getLanguage();
+        Integer status = questionSubmitQueryRequest.getStatus();
+        Long questionId = questionSubmitQueryRequest.getQuestionId();
+
+
+        // 拼接查询条件
+        queryWrapper.eq(ObjectUtils.isNotEmpty(userId), "userId", userId);
+        queryWrapper.eq(QuestionSubmitEnum.getEnumByValue(status)!=null, "status",status);
+        queryWrapper.eq(ObjectUtils.isNotEmpty(questionId), "questionId", questionId);
+        queryWrapper.eq(StringUtils.isNotBlank(language), "language", language);
+        queryWrapper.orderBy(SqlUtils.validSortField(sortField), sortOrder.equals(CommonConstant.SORT_ORDER_ASC),
+                sortField);
+        return queryWrapper;
+       
+
+    }
+
+    @Override
+    public Page<QuestionSubmitVO> getQuestionSubmitVOPage(Page<QuestionSubmit> questionSubmitPage, User loginUser) {
+        List<QuestionSubmit> questionSubmitList = questionSubmitPage.getRecords();
+        Page<QuestionSubmitVO> questionVOPage = new Page<>(questionSubmitPage.getCurrent(), questionSubmitPage.getSize(), questionSubmitPage.getTotal());
+        if (CollUtil.isEmpty(questionSubmitList)) {
+            return questionVOPage;
+        }
+
+
+        // 填充信息
+        List<QuestionSubmitVO> questionVOList = questionSubmitList.stream().map(question ->
+
+        getQuestionSubmitVO(question, loginUser)).collect(Collectors.toList());
+        questionVOPage.setRecords(questionVOList);
+        return questionVOPage;
+
+    }
+
+    @Override
+    public QuestionSubmitVO getQuestionSubmitVO(QuestionSubmit questionSubmit, User loginUser) {
+        QuestionSubmitVO questionVO =QuestionSubmitVO.objToVo(questionSubmit);
+
+        Long id = loginUser.getId();
+        if(id != questionSubmit.getUserId() && !userService.isAdmin(loginUser)){
+            questionVO.setCode(null);
+
+        }
+        return questionVO;
 
     }
 
