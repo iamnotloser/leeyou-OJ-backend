@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.leeyou.lyoj.common.ErrorCode;
 import com.leeyou.lyoj.constant.CommonConstant;
 import com.leeyou.lyoj.exception.BusinessException;
+import com.leeyou.lyoj.judge.JudgeService;
 import com.leeyou.lyoj.mapper.QuestionSubmitMapper;
 import com.leeyou.lyoj.model.dto.questionsubmit.QuestionSubmitAddRequest;
 import com.leeyou.lyoj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
@@ -24,6 +25,7 @@ import com.leeyou.lyoj.service.UserService;
 import com.leeyou.lyoj.utils.SqlUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -31,6 +33,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -48,6 +51,9 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
     @Resource
     private QuestionService questionService;
 
+    @Resource
+    @Lazy
+    private JudgeService judgeService;
 
     @Resource
     private UserService userService;
@@ -90,17 +96,13 @@ public class QuestionSubmitServiceImpl extends ServiceImpl<QuestionSubmitMapper,
         if (!result) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "数据插入失败");
         }
-        return questionSubmit.getId();
+        //执行判题服务
+        Long id = questionSubmit.getId();
+        CompletableFuture.runAsync(()->{
 
-        // 每个用户串行题目提交
-        // 锁必须要包裹住事务方法
-//        QuestionSubmitService questionSubmitService = (QuestionSubmitService) AopContext.currentProxy();
-//        synchronized (String.valueOf(userId).intern()) {
-//            return questionSubmitService.doQuestionSubmitInner(userId, questionId);
-//        }
-
-
-
+            judgeService.doJudge(id);
+        });
+        return id;
     }
 
     @Override

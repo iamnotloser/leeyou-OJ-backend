@@ -12,10 +12,15 @@ import com.leeyou.lyoj.exception.BusinessException;
 import com.leeyou.lyoj.exception.ThrowUtils;
 import com.leeyou.lyoj.model.dto.question.*;
 
+import com.leeyou.lyoj.model.dto.questionsubmit.QuestionSubmitAddRequest;
+import com.leeyou.lyoj.model.dto.questionsubmit.QuestionSubmitQueryRequest;
 import com.leeyou.lyoj.model.entity.Question;
+import com.leeyou.lyoj.model.entity.QuestionSubmit;
 import com.leeyou.lyoj.model.entity.User;
+import com.leeyou.lyoj.model.vo.QuestionSubmitVO;
 import com.leeyou.lyoj.model.vo.QuestionVO;
 import com.leeyou.lyoj.service.QuestionService;
+import com.leeyou.lyoj.service.QuestionSubmitService;
 import com.leeyou.lyoj.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -35,6 +40,14 @@ import java.util.List;
 @RequestMapping("/question")
 @Slf4j
 public class QuestionController {
+
+
+
+    private static final String AUTH_REQUEST_HEADER = "auth";
+
+    private static final String AUTH_REQUEST_SECRET= "secretkey";
+    @Resource
+    private QuestionSubmitService questionSubmitService;
 
     @Resource
     private QuestionService questionService;
@@ -148,7 +161,7 @@ public class QuestionController {
      * @return
      */
     @GetMapping("/get/vo")
-    public BaseResponse<QuestionVO> getQuestionVOById(long id, HttpServletRequest request) {
+    public BaseResponse<Question> getQuestionVOById(long id, HttpServletRequest request) {
         if (id <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -156,7 +169,12 @@ public class QuestionController {
         if (question == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
         }
-        return ResultUtils.success(questionService.getQuestionVO(question, request));
+        User loginUser = userService.getLoginUser(request);
+        // 不是本人或管理员，不能直接获取所有信息
+        if (!question.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+        }
+        return ResultUtils.success(question);
     }
 
     /**
@@ -260,6 +278,64 @@ public class QuestionController {
         }
         boolean result = questionService.updateById(question);
         return ResultUtils.success(result);
+    }
+
+
+
+    /**
+     * 提交题目
+     *
+     * @param questionSubmitAddRequest
+     * @param request
+     * @return
+     */
+    @PostMapping("/question_submit/do")
+    public BaseResponse<Long> doSubmit(@RequestBody QuestionSubmitAddRequest questionSubmitAddRequest,
+                                       HttpServletRequest request) {
+        if (questionSubmitAddRequest == null || questionSubmitAddRequest.getQuestionId() <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        // 登录才能提交
+        final User loginUser = userService.getLoginUser(request);
+        long questionId = questionSubmitAddRequest.getQuestionId();
+        long result = questionSubmitService.doQuestionSubmit(questionSubmitAddRequest, loginUser);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 分页获取题目提交列表
+     *
+     * @param questionQueryRequest
+     * @return
+     */
+    @PostMapping("/question_submit/list/page")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<Page<QuestionSubmit>> listQuestionSubmitByPage(@RequestBody QuestionSubmitQueryRequest questionQueryRequest) {
+        long current = questionQueryRequest.getCurrent();
+        long size = questionQueryRequest.getPageSize();
+        Page<QuestionSubmit> questionPage = questionSubmitService.page(new Page<>(current, size),
+                questionSubmitService.getQueryWrapper(questionQueryRequest));
+        return ResultUtils.success(questionPage);
+    }
+
+    /**
+     * 分页获取列表（封装类）（除了管理员外，普通用户只能看到非答案，提交代码等公开信息）
+     *
+     * @param questionSubmitQueryRequest
+     * @param request
+     * @return
+     */
+    @PostMapping("/question_submit/list/page/vo")
+    public BaseResponse<Page<QuestionSubmitVO>> listQuestionSubmitVOByPage(@RequestBody QuestionSubmitQueryRequest questionSubmitQueryRequest,
+                                                                     HttpServletRequest request) {
+        long current = questionSubmitQueryRequest.getCurrent();
+        long size = questionSubmitQueryRequest.getPageSize();
+        User loginUser = userService.getLoginUser(request);
+        // 限制爬虫
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
+        Page<QuestionSubmit> questionSubmitPage = questionSubmitService.page(new Page<>(current, size),
+                questionSubmitService.getQueryWrapper(questionSubmitQueryRequest));
+        return ResultUtils.success(questionSubmitService.getQuestionSubmitVOPage(questionSubmitPage, loginUser));
     }
 
 }
